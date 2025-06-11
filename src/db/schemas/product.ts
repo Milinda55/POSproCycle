@@ -1,4 +1,4 @@
-import type {RxJsonSchema, RxDocument, RxCollection} from 'rxdb';
+import type { RxJsonSchema, RxDocument, RxCollection } from 'rxdb';
 
 export interface ProductDocType {
     id: string;
@@ -6,94 +6,89 @@ export interface ProductDocType {
         en: string;
         si: string;
     };
-    description: {
-        en: string;
-        si: string;
-    };
-    category: string;
-    barcode: string;
     price: number;
-    cost: number;
+    quantity: number;
     stock: {
         store1: number;
         store2: number;
     };
-    minStock: number;
-    supplier: string;
-    createdAt: string;
-    updatedAt: string;
+    minStock?: number;
+    category?: string;
+    barcode?: string;
 }
 
 export const productSchema: RxJsonSchema<ProductDocType> = {
-    title: 'product schema',
-    version: 0,
-    description: 'Product inventory schema',
+    version: 1,
     primaryKey: 'id',
     type: 'object',
     properties: {
-        id: {
-            type: 'string',
-            maxLength: 100
-        },
+        id: { type: 'string', maxLength: 100 },
         name: {
             type: 'object',
             properties: {
-                en: { type: 'string' },
-                si: { type: 'string' }
+                en: {
+                    type: 'string',
+                    maxLength: 200
+                },
+                si: {
+                    type: 'string',
+                    maxLength: 200
+                }
             },
             required: ['en', 'si']
-        },
-        description: {
-            type: 'object',
-            properties: {
-                en: { type: 'string' },
-                si: { type: 'string' }
-            },
-            required: ['en', 'si']
-        },
-        category: {
-            type: 'string'
-        },
-        barcode: {
-            type: 'string',
-            maxLength: 100
         },
         price: {
             type: 'number',
-            minimum: 0
+            minimum: 0,
+            maximum: 999999.99,
+            multipleOf: 0.01
         },
-        cost: {
+        quantity: {
             type: 'number',
-            minimum: 0
+            minimum: 0,
+            maximum: 999999,
+            multipleOf: 1
         },
         stock: {
             type: 'object',
             properties: {
-                store1: { type: 'number', minimum: 0 },
-                store2: { type: 'number', minimum: 0 }
+                store1: {
+                    type: 'number',
+                    minimum: 0,
+                    maximum: 999999,
+                    multipleOf: 1
+                },
+                store2: {
+                    type: 'number',
+                    minimum: 0,
+                    maximum: 999999,
+                    multipleOf: 1
+                }
             },
             required: ['store1', 'store2']
         },
         minStock: {
             type: 'number',
-            minimum: 0
+            default: 5,
+            minimum: 0,
+            maximum: 999999,
+            multipleOf: 1
         },
-        supplier: {
-            type: 'string'
-        },
-        createdAt: {
+        category: {
             type: 'string',
-            format: 'date-time'
+            maxLength: 100
         },
-        updatedAt: {
+        barcode: {
             type: 'string',
-            format: 'date-time'
+            maxLength: 100
         }
     },
-    required: ['id', 'name', 'barcode', 'price', 'cost', 'stock', 'minStock', 'createdAt', 'updatedAt'],
-    indexes: ['barcode', 'category', 'createdAt']
+    required: ['id', 'name', 'price', 'quantity', 'stock'],
+    indexes: [
+        ['name.en'],
+        ['price']
+    ]
 };
 
 export type ProductDocument = RxDocument<ProductDocType>;
-
 export type ProductCollection = RxCollection<ProductDocType>;
