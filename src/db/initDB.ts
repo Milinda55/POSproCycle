@@ -1,71 +1,83 @@
-import { addRxPlugin, type RxDatabase } from 'rxdb';
-import { RxDBDevModePlugin } from 'rxdb/plugins/dev-mode';
-import { createRxDatabase } from 'rxdb/plugins/core';
+import { createRxDatabase, addRxPlugin } from 'rxdb';
 import { getRxStorageDexie } from 'rxdb/plugins/storage-dexie';
-
-// Import schemas
+import { RxDBDevModePlugin } from 'rxdb/plugins/dev-mode';
+import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { productSchema, type ProductCollection } from './schemas/product';
-import { saleSchema, type SaleCollection } from './schemas/sale';
-import { settingsSchema, type SettingsCollection } from './schemas/settings';
+import { RxDBMigrationSchemaPlugin } from 'rxdb/plugins/migration-schema';
 
-// Add dev mode plugin only in development
-if (import.meta.env.DEV) {
-    addRxPlugin(RxDBDevModePlugin);
-}
-// Database type
-// eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-expect-error
-export interface BikePoSDatabase extends RxDatabase {
+// Initialize plugins once
+addRxPlugin(RxDBDevModePlugin);
+addRxPlugin(RxDBMigrationSchemaPlugin);
+
+interface BikePoSDatabase {
     products: ProductCollection;
-    sales: SaleCollection;
-    settings: SettingsCollection;
 }
 
-let dbInstance: BikePoSDatabase | null = null;
+let _database: Promise<BikePoSDatabase> | null = null;
 
-export async function initDB(): Promise<BikePoSDatabase> {
-    if (dbInstance) {
-        return dbInstance;
+export async function resetDB(): Promise<void> {
+    if (_database) {
+        try {
+            const db = await _database;
+            await db.products.close();
+        } catch (error) {
+            console.log('Error destroying database:', error);
+        }
+        _database = null;
     }
 
-    console.log('Initializing database...');
-
+    // Clear IndexedDB
     try {
-        const db = await createRxDatabase<BikePoSDatabase>({
-            name: 'bikeposdb',
-            storage: getRxStorageDexie(),
-            multiInstance: true,
-            eventReduce: true,
-            ignoreDuplicate: true,
+        const databases = await indexedDB.databases();
+        const bikeposDb = databases.find(db => db.name === 'bikeposdb');
+
+        if (bikeposDb) {
+            return new Promise((resolve, reject) => {
+                const deleteReq = indexedDB.deleteDatabase('bikeposdb');
+                deleteReq.onsuccess = () => resolve();
+                deleteReq.onerror = () => reject(deleteReq.error);
+            });
+        }
+    } catch (error) {
+        console.log('Error clearing IndexedDB:', error);
+    }
+}
+
+export async function initDB(): Promise<BikePoSDatabase> {
+    if (_database) return _database;
+
+    _database = (async () => {
+        const storage = wrappedValidateAjvStorage({
+            storage: getRxStorageDexie()
         });
 
-        console.log('Database created, adding collections...');
+        const db = await createRxDatabase<BikePoSDatabase>({
+            name: 'bikeposdb',
+            storage,
+            multiInstance: false,
+            ignoreDuplicate: true // Allow during hot-reload
+        });
 
         await db.addCollections({
             products: {
                 schema: productSchema,
-            },
-            sales: {
-                schema: saleSchema,
-            },
-            settings: {
-                schema: settingsSchema,
-            },
+                migrationStrategies: {
+                    1: (oldDoc) => {
+                        return oldDoc; // Simple migration
+                    }
+                }
+            }
         });
 
-        console.log('Collections added successfully');
+        // Cleanup on hot-reload
+        if (import.meta.hot) {
+            import.meta.hot.dispose(async () => {
+                await db.close();
+            });
+        }
 
-        dbInstance = db;
         return db;
-    } catch (error) {
-        console.error('Failed to initialize database:', error);
-        throw error;
-    }
-}
+    })();
 
-export async function getDB(): Promise<BikePoSDatabase> {
-    if (!dbInstance) {
-        return await initDB();
-    }
-    return dbInstance;
+    return _database;
 }

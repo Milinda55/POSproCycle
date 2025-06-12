@@ -12,6 +12,8 @@
   "dependencies": {
     "@heroicons/react": "^2.2.0",
     "@tailwindcss/vite": "^4.1.8",
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
     "i18next": "^25.2.1",
     "pouchdb-adapter-http": "^9.0.0",
     "pouchdb-adapter-idb": "^9.0.0",
