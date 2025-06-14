@@ -1,6 +1,7 @@
 import './App.css'
 import { useEffect, useState } from 'react';
-import { Button } from './components/ui/button';
+import LoginPage from "@/pages/Login/LoginPage.tsx";
+import {createBrowserRouter, RouterProvider} from "react-router-dom";
 // import { initDB } from './db/initDB';
 // import { setupReplication } from './db/sync';
 
@@ -42,12 +43,27 @@ function App() {
         }
     };
 
+    const route = createBrowserRouter([
+        {
+            path: "/",
+            element:<LoginPage/>
+        },
+        {
+            path:"/harigala",
+            element:<h1>Harigala Branch</h1>
+        },
+        {
+            path:"/boyagama",
+            element:<h1>Boyagama Branch</h1>
+        },
+    ]);
+
     return (
         <div>
             {installPrompt && (
                 <button onClick={handleInstallClick}>Install App</button>
             )}
-            <Button>Click Me</Button>
+            <RouterProvider router={route}/>
         </div>
     );
 }
