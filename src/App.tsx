@@ -2,6 +2,7 @@ import './App.css'
 import { useEffect, useState } from 'react';
 import LoginPage from "@/pages/Login/LoginPage.tsx";
 import {createBrowserRouter, RouterProvider} from "react-router-dom";
+import MainPage from "@/pages/MainPage/MainPage.tsx";
 // import { initDB } from './db/initDB';
 // import { setupReplication } from './db/sync';
 
@@ -50,7 +51,7 @@ function App() {
         },
         {
             path:"/harigala",
-            element:<h1>Harigala Branch</h1>
+            element:<MainPage/>
         },
         {
             path:"/boyagama",
