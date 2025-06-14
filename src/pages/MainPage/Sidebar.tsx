@@ -5,24 +5,28 @@ import {
     Users,
     ShoppingCart,
     Settings,
-    Info,
+    // Info,
     LogOut,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { NavLink } from 'react-router-dom'
+import {NavLink, useNavigate} from 'react-router-dom'
 import { cn } from '@/lib/utils'
+import "./Sidebar.css";
 
 const navItems = [
-    { label: 'Dashboard', icon: LayoutDashboard, to: '/dashboard' },
-    { label: 'Ware House', icon: Warehouse, to: '/warehouse' },
-    { label: 'Invoices', icon: FileText, to: '/invoices' },
-    { label: 'Employees', icon: Users, to: '/employees' },
-    { label: 'Sale Screen', icon: ShoppingCart, to: '/sales' },
-    { label: 'Settings', icon: Settings, to: '/settings' },
-    { label: 'About', icon: Info, to: '/about' },
+    { label: 'Dashboard', icon: LayoutDashboard, to: 'dashboard' },
+    { label: 'Ware House', icon: Warehouse, to: 'warehouse' },
+    { label: 'Billing', icon: FileText, to: 'invoices' },
+    { label: 'Add/Update', icon: Users, to: 'employees' },
+    { label: 'Sale Screen', icon: ShoppingCart, to: 'sales' },
+    { label: 'Settings', icon: Settings, to: 'settings' },
+    // { label: 'About', icon: Info, to: 'about' },
 ]
 
+
+
 export default function Sidebar() {
+    const navigate = useNavigate();
     return (
         <aside className="h-screen w-72 bg-gradient-to-b from-indigo-900 to-indigo-700 text-white shadow-xl flex flex-col justify-between">
             <div>
@@ -41,7 +45,7 @@ export default function Sidebar() {
                                 className={({ isActive }) =>
                                     cn(
                                         'flex items-center gap-5 px-6 py-6 text-2xl font-semibold rounded-md transition-colors hover:bg-indigo-600',
-                                        isActive && 'bg-indigo-800'
+                                        isActive && 'bg-indigo-900 border'
                                     )
                                 }
                             >
@@ -53,7 +57,7 @@ export default function Sidebar() {
                 </nav>
             </div>
             <div className="p-6 border-t border-indigo-600">
-                <Button
+                <Button onClick={()=> navigate("/")}
                     variant="ghost"
                     className="w-full text-white text-2xl py-6 justify-start hover:bg-indigo-600"
                 >
