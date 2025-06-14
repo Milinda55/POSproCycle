@@ -7,8 +7,8 @@ import {
     TableHead,
     TableHeader,
     TableRow,
-} from "@/components/ui/table"
-import { Input } from "@/components/ui/input"
+} from "@/components/ui/table.tsx"
+import { Input } from "@/components/ui/input.tsx"
 import { useState } from "react"
 import {Checkbox} from "@radix-ui/react-checkbox";
 import {products} from "@/db/dummyData/Stock.ts";

@@ -3,7 +3,9 @@ import { useEffect, useState } from 'react';
 import LoginPage from "@/pages/Login/LoginPage.tsx";
 import {createBrowserRouter, Navigate, RouterProvider} from "react-router-dom";
 import MainPage from "@/pages/MainPage/MainPage.tsx";
-import {ProductsTable} from "@/components/ProductsTable.tsx";
+import {ProductsTable} from "@/components/Products/ProductsTable.tsx";
+import {Dashboard} from "@/components/Dashboard/Dashboard.tsx";
+import {UpdateProducts} from "@/components/UpdateProduct/UpdateProduct.tsx";
 // import { initDB } from './db/initDB';
 // import { setupReplication } from './db/sync';
 
@@ -55,10 +57,10 @@ function App() {
             element:<MainPage/>,
             children:[
                 {index:true,element:<Navigate to="dashboard"/>},
-                {path:"dashboard", element:<h1>DashBoard</h1>},
+                {path:"dashboard", element:<Dashboard/>},
                 {path:"warehouse",element:<ProductsTable/>},
                 {path:"invoices",element:<h1>invoices</h1>},
-                {path:"employees",element:<h1>Employes</h1>},
+                {path:"employees",element:<UpdateProducts/>},
                 {path:"sales",element:<h1>Sales</h1>},
                 {path:"settings",element:<h1>Setting</h1>},
                 {path:"about",element:<h1>About</h1>},
