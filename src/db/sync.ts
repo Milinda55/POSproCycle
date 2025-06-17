@@ -45,6 +45,18 @@ export class SyncManager {
         this.setupNetworkListeners();
     }
 
+    private getCouchDBUrl(): string {
+        // Get from environment variables
+        const baseUrl = import.meta.env.VITE_COUCHDB_URL;
+        return `${baseUrl}/bikepos_${this.storeId}`;
+    }
+    private getAuthHeader(): string {
+        const username = import.meta.env.VITE_COUCHDB_USERNAME;
+        const password = import.meta.env.VITE_COUCHDB_PASSWORD;
+        return 'Basic ' + btoa(`${username}:${password}`);
+    }
+
+
     private setupNetworkListeners(): void {
         window.addEventListener('online', () => {
             this.syncStatus.isOnline = true;
@@ -70,16 +82,21 @@ export class SyncManager {
             this.replicationState = replicateRxCollection({
                 collection,
                 replicationIdentifier: `${this.storeId}-sync`,
-                retryTime: 5000,
-                waitForLeadership: false,
                 push: {
                     handler: this.pushHandler.bind(this) as unknown as ReplicationPushHandler<ProductDocType>,
                     batchSize: 10
                 },
                 pull: {
                     handler: this.pullHandler.bind(this) as unknown as ReplicationPullHandler<ProductDocType, any>,
-                    batchSize: 10
-                }
+                    batchSize: 50,
+                    modifier: (doc) => {
+                        doc._id = doc.id;
+                        return doc;
+                    }
+                },
+                live: true,
+                retryTime: 5000,
+                autoStart: true
             });
 
             this.setupReplicationListeners();
@@ -93,55 +110,106 @@ export class SyncManager {
         }
     }
 
-    // Fix: Use a correct parameter type for push handler
-    private async pushHandler(docs: RxReplicationWriteToMasterRow<ProductDocType>[]): Promise<boolean> {
+    private async pushHandler(
+        docs: RxReplicationWriteToMasterRow<ProductDocType>[]
+    ): Promise<{ success: true } | { success: false; error: any }> {
         try {
-            console.log(`Pushing ${docs.length} documents from ${this.storeId}:`, docs);
+            const response = await fetch(`${this.getCouchDBUrl()}/_bulk_docs`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': this.getAuthHeader()
+                },
+                body: JSON.stringify({
+                    docs: docs.map(row => ({
+                        ...row.newDocumentState,
+                        // Ensure CouchDB compatible fields
+                        _id: row.newDocumentState.id,
+                        _rev: row.assumedMasterState?.id
+                    }))
+                })
+            });
 
-            // Extract the actual document data from the replication rows
-            const docData = docs.map(row => row.newDocumentState);
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+            }
 
-            // Here you would typically send to your backend
-            // For now, we'll just simulate a successful push
-            console.log('Document data to push:', docData);
+            // Parse CouchDB response to find conflicts
+            const result = await response.json();
+            const conflicts = result.filter((item: any) => item.error === 'conflict');
 
-            this.syncStatus.documentsTransferred += docs.length;
-            this.syncStatus.lastSync = new Date();
-            this.notifyStatusChange();
-            return true;
+            if (conflicts.length > 0) {
+                // Handle conflicts if needed
+                return {
+                    success: false,
+                    error: new Error(`${conflicts.length} conflict(s) detected`)
+                };
+            }
+
+            return { success: true };
         } catch (error) {
             console.error('Push failed:', error);
-            this.handleSyncError(error as Error);
-            return false;
+            return {
+                success: false,
+                error: error instanceof Error ? error : new Error(String(error))
+            };
         }
     }
 
-    // Fix: Add the missing pull handler with correct return type
     private async pullHandler(
-        lastPulledCheckpoint: any,
-        // batchSize: number
-    ): Promise<{ documents: ProductDocType[]; checkpoint: any }> {
+        lastPulledCheckpoint: { sequence: string } | null
+    ): Promise<{
+        documents: ProductDocType[];
+        checkpoint: { sequence: string };
+    }> {
         try {
-            console.log(`Pulling documents for ${this.storeId}, checkpoint:`, lastPulledCheckpoint);
+            // 1. Prepare the URL with proper checkpoint handling
+            const params = new URLSearchParams({
+                include_docs: 'true',
+                style: 'all_docs',
+                feed: 'normal',
+                heartbeat: '10000',
+                ...(lastPulledCheckpoint && { since: lastPulledCheckpoint.sequence })
+            });
 
-            // Here you would typically fetch from your backend
-            // For now, return empty result
-            const result = {
-                documents: [] as ProductDocType[],
-                checkpoint: lastPulledCheckpoint || null
-            };
+            const url = `${this.getCouchDBUrl()}/_changes?${params.toString()}`;
 
-            if (result.documents.length > 0) {
-                this.syncStatus.documentsTransferred += result.documents.length;
-                this.syncStatus.lastSync = new Date();
-                this.notifyStatusChange();
+            // 2. Make the authenticated request
+            const response = await fetch(url, {
+                headers: {
+                    'Accept': 'application/json',
+                    'Authorization': this.getAuthHeader()
+                }
+            });
+
+            if (!response.ok) {
+                throw new Error(`Pull failed: ${response.status} ${await response.text()}`);
             }
 
-            return result;
+            // 3. Process the CouchDB response
+            const data = await response.json() as {
+                results: Array<{ doc?: ProductDocType; seq: string }>;
+                last_seq: string;
+            };
+
+            // 4. Transform documents to RxDB format
+            const documents = data.results
+                .filter(result => result.doc && !result.doc.id.startsWith('_design/'))
+                .map(result => ({
+                    ...result.doc!,
+                    id: result.doc!.id, // Map _id back to id
+                    _rev: result.doc!.id // Keep _rev for future updates
+                }));
+
+            // 5. Return in RxDB expected format
+            return {
+                documents,
+                checkpoint: { sequence: data.last_seq }
+            };
+
         } catch (error) {
-            console.error('Pull failed:', error);
-            this.handleSyncError(error as Error);
-            throw error;
+            console.error('Pull error:', error);
+            throw error; // RxDB will handle retries
         }
     }
 
@@ -149,7 +217,10 @@ export class SyncManager {
         if (!this.replicationState) return;
 
         this.replicationState.error$.subscribe(error => {
-            console.error('Replication error:', error);
+            if (error.code === 'RC_PULL') {
+                console.warn('Pull error occurred, will retry:', error.message);
+            }
+            // console.error('Replication error:', error);
             this.handleSyncError(error);
         });
 
