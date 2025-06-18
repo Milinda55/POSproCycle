@@ -16,4 +16,17 @@ export default defineConfig({
           }
       })
   ],
+    define: {
+        'import.meta.env': process.env
+    },
+    server: {
+        proxy: {
+            '/db': {
+                target: 'http://localhost:5984',
+                changeOrigin: true,
+                rewrite: (path) => path.replace(/^\/db/, ''),
+                auth: 'admin:mili1234'
+            }
+        }
+    }
 })

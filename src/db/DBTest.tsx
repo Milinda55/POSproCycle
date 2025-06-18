@@ -25,7 +25,10 @@ export default function DBTest() {
                 name: { en: 'Test', si: 'පරීක්ෂණ' },
                 price: 10,
                 quantity: 5,
-                stock: { store1: 3, store2: 2 }
+                stock: { store1: 3, store2: 2},
+                minStock: 5,
+                category: 'Test Category',
+                barcode: 'TEST1234'
             });
             setStatus('Insert successful!');
         } catch (error) {

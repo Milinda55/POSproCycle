@@ -1,15 +1,16 @@
 import { createRxDatabase, addRxPlugin } from 'rxdb';
-import { getRxStorageDexie } from 'rxdb/plugins/storage-dexie';
+// import { getRxStorageDexie } from 'rxdb/plugins/storage-dexie';
 import { RxDBDevModePlugin } from 'rxdb/plugins/dev-mode';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
-import { productSchema, type ProductCollection } from './schemas/product';
+import { productSchema, type ProductCollection } from './schemas/product.ts';
 import { RxDBMigrationSchemaPlugin } from 'rxdb/plugins/migration-schema';
+import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 
 // Initialize plugins once
 addRxPlugin(RxDBDevModePlugin);
 addRxPlugin(RxDBMigrationSchemaPlugin);
 
-interface BikePoSDatabase {
+export interface BikePoSDatabase {
     products: ProductCollection;
 }
 
@@ -48,7 +49,7 @@ export async function initDB(): Promise<BikePoSDatabase> {
 
     _database = (async () => {
         const storage = wrappedValidateAjvStorage({
-            storage: getRxStorageDexie()
+            storage: getRxStorageMemory()
         });
 
         const db = await createRxDatabase<BikePoSDatabase>({
@@ -70,7 +71,8 @@ export async function initDB(): Promise<BikePoSDatabase> {
         });
 
         // Cleanup on hot-reload
-        if (import.meta.hot) {
+        const isTestEnv = process.env.NODE_ENV === 'test';
+        if (!isTestEnv && import.meta?.hot) {
             import.meta.hot.dispose(async () => {
                 await db.close();
             });
