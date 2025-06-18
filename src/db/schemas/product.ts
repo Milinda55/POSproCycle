@@ -22,7 +22,11 @@ export const productSchema: RxJsonSchema<ProductDocType> = {
     primaryKey: 'id',
     type: 'object',
     properties: {
-        id: { type: 'string', maxLength: 100 },
+        id: {
+            type: 'string',
+            maxLength: 100,
+            pattern: '^[a-zA-Z0-9][a-zA-Z0-9-_:.]*$'
+        },
         name: {
             type: 'object',
             properties: {
@@ -83,11 +87,12 @@ export const productSchema: RxJsonSchema<ProductDocType> = {
             maxLength: 100
         }
     },
+
     required: ['id', 'name', 'price', 'quantity', 'stock'],
     indexes: [
-        ['name.en'],
-        ['price']
-    ]
+        ['name.en'], ['price']
+    ],
+    additionalProperties: false
 };
 
 export type ProductDocument = RxDocument<ProductDocType>;

@@ -23,7 +23,10 @@ async function main() {
         name: { en: 'Verification Product', si: 'සත්‍යාපන භාණ්ඩ' },
         price: 100,
         quantity: 1,
-        stock: { store1: 3, store2: 8 }
+        stock: { store1: 3, store2: 8 },
+        minStock: 5,
+        category: 'Test Category',
+        barcode: 'TEST1234'
     });
 
     console.log('Inserted document:', doc.toJSON());

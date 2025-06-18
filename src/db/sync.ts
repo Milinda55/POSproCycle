@@ -2,8 +2,9 @@ import { replicateRxCollection } from 'rxdb/plugins/replication';
 import type {
     RxReplicationState
 } from 'rxdb/plugins/replication';
-import type { ProductDocType, ProductCollection } from './schemas/product.ts';
+import type {ProductDocType, ProductCollection} from './schemas/product.ts';
 import type {ReplicationPullHandler, ReplicationPushHandler, RxReplicationWriteToMasterRow} from "rxdb";
+import {Subscription} from "rxjs";
 
 export type StoreId = 'store1' | 'store2';
 
@@ -26,8 +27,28 @@ export interface StockTransferRequest {
     status: 'pending' | 'completed' | 'failed';
 }
 
+export interface SyncStatus {
+    isOnline: boolean;
+    lastSync: Date | null;
+    syncInProgress: boolean;
+    errors: string[];
+    conflictsResolved: number;
+    documentsTransferred: number;
+}
+
+export interface StockTransferRequest {
+    productId: string;
+    fromStore: StoreId;
+    toStore: StoreId;
+    quantity: number;
+    reason: 'low_stock' | 'manual_transfer' | 'rebalance';
+    timestamp: Date;
+    status: 'pending' | 'completed' | 'failed';
+}
+
 export class SyncManager {
-    private replicationState: RxReplicationState<ProductDocType, any> | null = null;
+    private replicationState: RxReplicationState<ProductDocType, { sequence: string }> | null = null;
+    private monitoringSubscriptions: Subscription[] = [];
     private syncStatus: SyncStatus = {
         isOnline: navigator.onLine,
         lastSync: null,
@@ -46,16 +67,15 @@ export class SyncManager {
     }
 
     private getCouchDBUrl(): string {
-        // Get from environment variables
         const baseUrl = import.meta.env.VITE_COUCHDB_URL;
         return `${baseUrl}/bikepos_${this.storeId}`;
     }
+
     private getAuthHeader(): string {
         const username = import.meta.env.VITE_COUCHDB_USERNAME;
         const password = import.meta.env.VITE_COUCHDB_PASSWORD;
         return 'Basic ' + btoa(`${username}:${password}`);
     }
-
 
     private setupNetworkListeners(): void {
         window.addEventListener('online', () => {
@@ -70,40 +90,39 @@ export class SyncManager {
         });
     }
 
-    public async initializeSync(collection: ProductCollection): Promise<void> {
-        if (this.replicationState) {
-            await this.replicationState.cancel();
-        }
-
+    async initializeSync(collection: ProductCollection): Promise<void> {
         try {
+            if (this.replicationState) {
+                await this.replicationState.cancel();
+            }
+
             this.syncStatus.syncInProgress = true;
             this.notifyStatusChange();
 
             this.replicationState = replicateRxCollection({
                 collection,
-                replicationIdentifier: `${this.storeId}-sync`,
+                replicationIdentifier: `${this.storeId}-sync-${Date.now()}`,
+                pull: {
+                    handler: this.pullHandler.bind(this) as unknown as ReplicationPullHandler<ProductDocType, { sequence: string }>,
+                    batchSize: 10
+                },
                 push: {
                     handler: this.pushHandler.bind(this) as unknown as ReplicationPushHandler<ProductDocType>,
                     batchSize: 10
                 },
-                pull: {
-                    handler: this.pullHandler.bind(this) as unknown as ReplicationPullHandler<ProductDocType, any>,
-                    batchSize: 50,
-                    modifier: (doc) => {
-                        doc._id = doc.id;
-                        return doc;
-                    }
-                },
                 live: true,
-                retryTime: 5000,
+                retryTime: 3000,
                 autoStart: true
             });
 
             this.setupReplicationListeners();
             this.startLowStockMonitoring(collection);
             console.log(`Sync initialized for ${this.storeId}`);
+
         } catch (error) {
+            console.error('Sync initialization failed:', error);
             this.handleSyncError(error as Error);
+            throw error;
         } finally {
             this.syncStatus.syncInProgress = false;
             this.notifyStatusChange();
@@ -112,104 +131,90 @@ export class SyncManager {
 
     private async pushHandler(
         docs: RxReplicationWriteToMasterRow<ProductDocType>[]
-    ): Promise<{ success: true } | { success: false; error: any }> {
+    ): Promise<Array<{ resolved: ProductDocType }>> {
         try {
+            const couchDocs = docs.map(row => ({
+                _id: row.newDocumentState.id,
+                ...row.newDocumentState,
+                _rev: (row.assumedMasterState as any)?._rev
+            }));
+
             const response = await fetch(`${this.getCouchDBUrl()}/_bulk_docs`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': this.getAuthHeader()
                 },
-                body: JSON.stringify({
-                    docs: docs.map(row => ({
-                        ...row.newDocumentState,
-                        // Ensure CouchDB compatible fields
-                        _id: row.newDocumentState.id,
-                        _rev: row.assumedMasterState?.id
-                    }))
-                })
+                body: JSON.stringify({ docs: couchDocs })
             });
 
             if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+                throw new Error(`Push failed: ${response.status}`);
             }
 
-            // Parse CouchDB response to find conflicts
             const result = await response.json();
-            const conflicts = result.filter((item: any) => item.error === 'conflict');
+            return result.map((item: any) => ({
+                resolved: {
+                    ...item,
+                    id: item.id || item._id,
+                    _rev: item.rev || item._rev
+                }
+            }));
 
-            if (conflicts.length > 0) {
-                // Handle conflicts if needed
-                return {
-                    success: false,
-                    error: new Error(`${conflicts.length} conflict(s) detected`)
-                };
-            }
-
-            return { success: true };
         } catch (error) {
             console.error('Push failed:', error);
-            return {
-                success: false,
-                error: error instanceof Error ? error : new Error(String(error))
-            };
+            return docs.map(doc => ({
+                resolved: {
+                    ...doc.newDocumentState,
+                    _id: doc.newDocumentState.id,
+                    _rev: (doc.assumedMasterState as any)?._rev
+                }
+            }));
         }
     }
 
     private async pullHandler(
         lastPulledCheckpoint: { sequence: string } | null
-    ): Promise<{
-        documents: ProductDocType[];
-        checkpoint: { sequence: string };
-    }> {
+    ): Promise<{ documents: ProductDocType[]; checkpoint: { sequence: string } }> {
         try {
-            // 1. Prepare the URL with proper checkpoint handling
-            const params = new URLSearchParams({
-                include_docs: 'true',
-                style: 'all_docs',
-                feed: 'normal',
-                heartbeat: '10000',
-                ...(lastPulledCheckpoint && { since: lastPulledCheckpoint.sequence })
-            });
+            const url = new URL(`${this.getCouchDBUrl()}/_changes`);
+            url.searchParams.set('include_docs', 'true');
+            url.searchParams.set('style', 'all_docs');
+            if (lastPulledCheckpoint) {
+                url.searchParams.set('since', lastPulledCheckpoint.sequence);
+            }
 
-            const url = `${this.getCouchDBUrl()}/_changes?${params.toString()}`;
-
-            // 2. Make the authenticated request
-            const response = await fetch(url, {
-                headers: {
-                    'Accept': 'application/json',
-                    'Authorization': this.getAuthHeader()
-                }
+            const response = await fetch(url.toString(), {
+                headers: { 'Authorization': this.getAuthHeader() }
             });
 
             if (!response.ok) {
-                throw new Error(`Pull failed: ${response.status} ${await response.text()}`);
+                throw new Error(`Pull failed: ${response.status}`);
             }
 
-            // 3. Process the CouchDB response
-            const data = await response.json() as {
-                results: Array<{ doc?: ProductDocType; seq: string }>;
-                last_seq: string;
-            };
+            const data = await response.json();
 
-            // 4. Transform documents to RxDB format
             const documents = data.results
-                .filter(result => result.doc && !result.doc.id.startsWith('_design/'))
-                .map(result => ({
-                    ...result.doc!,
-                    id: result.doc!.id, // Map _id back to id
-                    _rev: result.doc!.id // Keep _rev for future updates
-                }));
+                .filter((r: any) => r.doc && !r.doc._id.startsWith('_design/'))
+                .map((r: any) => {
+                    const { _id, _rev, ...docData } = r.doc;
+                    return {
+                        ...docData,
+                        id: _id,
+                        _rev
+                    } as ProductDocType;
+                });
 
-            // 5. Return in RxDB expected format
             return {
                 documents,
                 checkpoint: { sequence: data.last_seq }
             };
-
         } catch (error) {
             console.error('Pull error:', error);
-            throw error; // RxDB will handle retries
+            return {
+                documents: [],
+                checkpoint: lastPulledCheckpoint || { sequence: '0' }
+            };
         }
     }
 
@@ -217,10 +222,7 @@ export class SyncManager {
         if (!this.replicationState) return;
 
         this.replicationState.error$.subscribe(error => {
-            if (error.code === 'RC_PULL') {
-                console.warn('Pull error occurred, will retry:', error.message);
-            }
-            // console.error('Replication error:', error);
+            console.error('Replication error:', error);
             this.handleSyncError(error);
         });
 
@@ -232,28 +234,40 @@ export class SyncManager {
 
         this.replicationState.received$.subscribe(info => {
             console.log('Documents received:', info);
-            // this.syncStatus.documentsTransferred += info.documents.length;
             this.notifyStatusChange();
         });
 
         this.replicationState.sent$.subscribe(info => {
             console.log('Documents sent:', info);
-            // this.syncStatus.documentsTransferred += info.documents.length;
             this.notifyStatusChange();
         });
     }
 
     private startLowStockMonitoring(collection: ProductCollection): void {
         // Monitor for low stock items
-        collection.find({
+        this.monitoringSubscriptions.forEach(sub => sub.unsubscribe());
+        this.monitoringSubscriptions = [];
+
+        const sub = collection.find({
             selector: {
-                [`stock.${this.storeId}`]: { $lt: 5 }
+                [`stock.${this.storeId}`]: { $lt: 5 } // Items with stock < 5
             }
-        }).$.subscribe(docs => {
-            docs.forEach(doc => {
-                this.checkForStockTransfer(doc);
-            });
+        }).$.subscribe({
+            next: (docs) => {
+                docs.forEach(doc => {
+                    if (doc.stock[this.storeId] < 5) {
+                        this.checkForStockTransfer(doc);
+                    }
+                });
+            },
+            error: (err) => {
+                console.error('Low stock monitoring error:', err);
+            }
         });
+        this.monitoringSubscriptions.push(sub);
+
+        // Store subscription if you need to unsubscribe later
+        // this.monitoringSubscriptions.push(subscription);
     }
 
     private checkForStockTransfer(product: ProductDocType): void {
@@ -342,6 +356,8 @@ export class SyncManager {
             await this.replicationState.cancel();
             this.replicationState = null;
         }
+        this.monitoringSubscriptions.forEach(sub => sub.unsubscribe());
+        this.monitoringSubscriptions = [];
         this.statusCallbacks = [];
         this.stockTransferQueue = [];
     }
