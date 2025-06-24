@@ -1,17 +1,26 @@
 import './App.css'
-import DBTest from "./db/DBTest.tsx";
+// For testing only - remove later
+import { initDB } from './db/initDB.ts';
+(window as any).initDB = initDB;
+
+import { SyncManager } from './db/sync.ts';
+import {useEffect} from "react";
+import {initTestingHelpers} from "./utils/testingHelpers.ts";
+(window as any).SyncManager = SyncManager;
 
 function App() {
 
-  return (
-      <div>
-          <h1>Database Test</h1>
-          <DBTest />
-      </div>
+    useEffect(() => {
+        if (process.env.NODE_ENV === 'development') {
+            initTestingHelpers();
+        }
+    }, []);
 
-    // <>
-    //   <h1 className="text-3xl bg-amber-200">Hello POS</h1>
-    // </>
+  return (
+
+    <>
+      <h1 className="text-3xl bg-amber-200">Hello POS</h1>
+    </>
   )
 }
 
