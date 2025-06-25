@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { products } from "@/db/dummyData/Stock";
 
 interface BillingItem {
-    id: string;
+    id: number;
     name: string;
     price: number;
     quantity: number;
@@ -59,7 +59,7 @@ export function BillingPage() {
     };
 
     // Update quantity in billing table
-    const updateQuantity = (id: string, newQuantity: number) => {
+    const updateQuantity = (id: number, newQuantity: number) => {
         if (newQuantity < 1) return;
 
         setBillingItems(prev =>
@@ -72,7 +72,7 @@ export function BillingPage() {
     };
 
     // Remove item from billing table
-    const removeItem = (id: string) => {
+    const removeItem = (id: number) => {
         setBillingItems(prev => prev.filter(item => item.id !== id));
     };
 
