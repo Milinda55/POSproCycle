@@ -6,6 +6,8 @@ import MainPage from "@/pages/MainPage/MainPage.tsx";
 import {ProductsTable} from "@/components/Products/ProductsTable.tsx";
 import {Dashboard} from "@/components/Dashboard/Dashboard.tsx";
 import {UpdateProducts} from "@/components/UpdateProduct/UpdateProduct.tsx";
+import AddItem from "@/components/addItem/AddItem.tsx";
+import {BillingPage} from "@/components/billing/Billing.tsx";
 // import { initDB } from './db/initDB';
 // import { setupReplication } from './db/sync';
 
@@ -59,11 +61,12 @@ function App() {
                 {index:true,element:<Navigate to="dashboard"/>},
                 {path:"dashboard", element:<Dashboard/>},
                 {path:"warehouse",element:<ProductsTable/>},
-                {path:"invoices",element:<h1>invoices</h1>},
+                {path:"invoices",element:<BillingPage/>},
                 {path:"employees",element:<UpdateProducts/>},
                 {path:"sales",element:<h1>Sales</h1>},
                 {path:"settings",element:<h1>Setting</h1>},
                 {path:"about",element:<h1>About</h1>},
+                {path:"addItems",element:<AddItem/>},
             ]
         },
         {

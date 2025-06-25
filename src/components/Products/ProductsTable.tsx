@@ -80,7 +80,6 @@ export function ProductsTable() {
                             <TableHead className="text-right">Price (LKR)</TableHead>
                             <TableHead className="text-right">Cost (LKR)</TableHead>
                             <TableHead className="text-center">Stock (Store 1)</TableHead>
-                            <TableHead className="text-center">Stock (Store 2)</TableHead>
                             <TableHead className="text-center">Min Stock</TableHead>
                             <TableHead>Supplier</TableHead>
                             <TableHead className="text-center">Status</TableHead>
@@ -100,7 +99,6 @@ export function ProductsTable() {
                                     <TableCell className="text-right">Rs. {product.price.toFixed(2)}</TableCell>
                                     <TableCell className="text-right">RS. {product.cost.toFixed(2)}</TableCell>
                                     <TableCell className="text-center">{product.stock.store1}</TableCell>
-                                    <TableCell className="text-center">{product.stock.store2}</TableCell>
                                     <TableCell className="text-center">{product.minStock}</TableCell>
                                     <TableCell>{product.supplier}</TableCell>
                                     <TableCell className="text-center">

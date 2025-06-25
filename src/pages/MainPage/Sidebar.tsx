@@ -5,7 +5,7 @@ import {
     Users,
     ShoppingCart,
     Settings,
-    // Info,
+    Plus,
     LogOut,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -17,7 +17,8 @@ const navItems = [
     { label: 'Dashboard', icon: LayoutDashboard, to: 'dashboard' },
     { label: 'Ware House', icon: Warehouse, to: 'warehouse' },
     { label: 'Billing', icon: FileText, to: 'invoices' },
-    { label: 'Add/Update', icon: Users, to: 'employees' },
+    { label: 'Update', icon: Users, to: 'employees' },
+    { label: 'Add Items', icon: Plus, to: 'addItems' },
     { label: 'Sale Screen', icon: ShoppingCart, to: 'sales' },
     { label: 'Settings', icon: Settings, to: 'settings' },
     // { label: 'About', icon: Info, to: 'about' },
@@ -65,7 +66,7 @@ export default function Sidebar() {
                     Exit
                 </Button>
                 <p className="text-sm mt-4 text-gray-300">
-                    © {new Date().getFullYear()} Muzammil Ijaz
+                    © {new Date().getFullYear()} HarshaMilli
                 </p>
             </div>
         </aside>

@@ -8,27 +8,16 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table.tsx"
-import { Input } from "@/components/ui/input.tsx"
-import { useState } from "react"
+import {Input} from "@/components/ui/input.tsx"
+import {useState} from "react"
 import {Checkbox} from "@radix-ui/react-checkbox";
 import {products} from "@/db/dummyData/Stock.ts";
-import UpdateProductModal from "@/components/UpdateProduct/UpdateProductModal.tsx";
+import {Button} from "@/components/ui/button.tsx";
 
-
-
-
-function LowStockBadge() {
-    return (
-        <span className="inline-block px-2 py-0.5 text-xs font-medium text-red-800 bg-red-200 rounded-full">
-      Low Stock
-    </span>
-    );
-}
-
-export function UpdateProducts() {
+export function AddItems() {
     const [search, setSearch] = useState("");
     const [showLowStockOnly, setShowLowStockOnly] = useState(false);
-    const [productsData, setProductsData] = useState(products);
+    const [productsData] = useState(products);
 
     const filteredProducts = productsData.filter((product) => {
         const matchesSearch =
@@ -38,13 +27,6 @@ export function UpdateProducts() {
         return matchesSearch && (!showLowStockOnly || isLowStock);
     });
 
-    const handleUpdateProduct = (updatedProduct: typeof products[0]) => {
-        setProductsData(prev =>
-            prev.map(product =>
-                product.id === updatedProduct.id ? updatedProduct : product
-            )
-        );
-    };
 
     return (
         <div className="space-y-6 p-6 bg-white shadow-md rounded-lg">
@@ -91,16 +73,15 @@ export function UpdateProducts() {
                             <TableHead className="text-right">Price (LKR)</TableHead>
                             <TableHead className="text-right">Cost (LKR)</TableHead>
                             <TableHead className="text-center">Stock (Store 1)</TableHead>
-                            <TableHead className="text-center">Stock (Store 2)</TableHead>
                             <TableHead className="text-center">Min Stock</TableHead>
                             <TableHead className="text-center">Status</TableHead>
                             <TableHead className="text-center">Update</TableHead>
+                            <TableHead className="text-center">Add</TableHead>
                         </TableRow>
                     </TableHeader>
 
                     <TableBody>
                         {filteredProducts.map((product) => {
-                            const isLowStock = product.stock.store1 < product.minStock;
                             return (
                                 <TableRow key={product.id} className="hover:bg-indigo-50 transition">
                                     <TableCell className="font-medium">{product.id}</TableCell>
@@ -111,16 +92,15 @@ export function UpdateProducts() {
                                     <TableCell className="text-right">Rs. {product.price.toFixed(2)}</TableCell>
                                     <TableCell className="text-right">RS. {product.cost.toFixed(2)}</TableCell>
                                     <TableCell className="text-center">{product.stock.store1}</TableCell>
-                                    <TableCell className="text-center">{product.stock.store2}</TableCell>
                                     <TableCell className="text-center">{product.minStock}</TableCell>
                                     <TableCell className="text-center">
-                                        {isLowStock ? <LowStockBadge /> : null}
+                                       <Input type="number"></Input>
                                     </TableCell>
                                     <TableCell className="text-center">
-                                        <UpdateProductModal
-                                            product={product}
-                                            onSave={handleUpdateProduct}
-                                        />
+                                        <Button className="bg-orange-500">Add</Button>
+                                    </TableCell>
+                                    <TableCell className="text-center">
+                                        <Button className="bg-red-800">Remove</Button>
                                     </TableCell>
                                 </TableRow>
                             );
@@ -142,3 +122,5 @@ export function UpdateProducts() {
         </div>
     );
 }
+
+export default AddItems;
