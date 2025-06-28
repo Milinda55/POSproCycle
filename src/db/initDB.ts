@@ -1,4 +1,4 @@
-import { createRxDatabase, addRxPlugin } from 'rxdb';
+import {createRxDatabase, addRxPlugin } from 'rxdb';
 // import { getRxStorageDexie } from 'rxdb/plugins/storage-dexie';
 import { RxDBDevModePlugin } from 'rxdb/plugins/dev-mode';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
@@ -9,6 +9,8 @@ import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
 // Initialize plugins once
 addRxPlugin(RxDBDevModePlugin);
 addRxPlugin(RxDBMigrationSchemaPlugin);
+
+let database: BikePoSDatabase;
 
 export interface BikePoSDatabase {
     products: ProductCollection;
@@ -83,3 +85,10 @@ export async function initDB(): Promise<BikePoSDatabase> {
 
     return _database;
 }
+
+export const getRxDB = async (): Promise<BikePoSDatabase> => {
+    if (!database) {
+        database = await initDB();
+    }
+    return database;
+};

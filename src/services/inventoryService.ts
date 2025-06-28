@@ -1,6 +1,7 @@
 import { ProductRepository } from '../db/repositories/productRepository';
 import type {ProductDocType} from '../db/schemas/product';
 import { validateProduct, type ValidationError } from '../utils/validation';
+import {getRxDB} from "../db/initDB.ts";
 
 export class InventoryService {
     private productRepository: ProductRepository
@@ -8,34 +9,48 @@ export class InventoryService {
         this.productRepository = productRepository;
     }
 
-    async addProduct(productData: Omit<ProductDocType, 'id'>): Promise<{ success: boolean; product?: any; errors?: ValidationError[] }> {
+    static async addProduct(productData: Omit<ProductDocType, 'id'>): Promise<{ success: boolean; product?: any; errors?: ValidationError[] }> {
         const errors = validateProduct(productData);
         if (errors.length > 0) {
             return { success: false, errors };
         }
 
         try {
-            const product = await this.productRepository.createProduct(productData);
-            return { success: true, product };
+            const db = await getRxDB();
+            const newProduct = {
+                ...productData,
+                id: `prod_${Date.now()}`, // Generate unique ID
+                stock: {
+                    store1: Number(productData.stock.store1) || 0,
+                    store2: Number(productData.stock.store2) || 0
+                }
+            };
+
+            await db.products.insert(newProduct);
+            return { success: true };
         } catch (error) {
+            console.error("Error adding product: ", error)
             return { success: false, errors: [{ field: 'general', message: 'Failed to create product' }] };
         }
     }
 
-    async updateProduct(id: string, updates: Partial<ProductDocType>): Promise<{ success: boolean; product?: any; errors?: ValidationError[] }> {
-        const errors = validateProduct(updates);
-        if (errors.length > 0) {
-            return { success: false, errors };
-        }
-
+    async updateProduct(productId: string, store: 'store1' | 'store2', quantity: number): Promise<boolean> {
         try {
-            const product = await this.productRepository.updateProduct(id, updates);
-            if (!product) {
-                return { success: false, errors: [{ field: 'general', message: 'Product not found' }] };
+            const db = await getRxDB();
+            const product = await db.products.findOne(productId).exec();
+
+            if (product) {
+                await product.update({
+                    $set: {
+                        [`stock.${store}`]: Number(quantity)
+                    }
+                });
+                return true;
             }
-            return { success: true, product };
+            return false;
         } catch (error) {
-            return { success: false, errors: [{ field: 'general', message: 'Failed to update product' }] };
+            console.error('Error updating stock:', error);
+            return false;
         }
     }
 
