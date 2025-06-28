@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import type {ProductDocType} from '../../db/schemas/product';
 import { CATEGORIES } from '../../utils/constants';
+import '../../styles/components/inventory/inventory.scss'
 
 interface AddProductFormProps {
     onSubmit: (product: Omit<ProductDocType, 'id'>) => Promise<{ success: boolean; errors?: any[] }>;
@@ -8,14 +9,14 @@ interface AddProductFormProps {
 }
 
 export const AddProductForm: React.FC<AddProductFormProps> = ({ onSubmit, onCancel }) => {
-    const [formData, setFormData] = useState({
-        name: { en: '', si: '' },
-        price: 0,
-        quantity: 0,
-        stock: { store1: 0, store2: 0 },
+    const [formData, setFormData] = useState<Omit<ProductDocType, 'id'>>({
+        name: { en: 'My Product Test', si: 'මගේ නිෂ්පාදන පරීක්ෂණය' },
+        price: 50,
+        quantity: 5,
+        stock: { store1: 2, store2: 0 },
         minStock: 5,
         category: '',
-        barcode: ''
+        barcode: 'testcode123'
     });
     const [errors, setErrors] = useState<any[]>([]);
     const [submitting, setSubmitting] = useState(false);
@@ -23,8 +24,20 @@ export const AddProductForm: React.FC<AddProductFormProps> = ({ onSubmit, onCanc
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setSubmitting(true);
+        console.log("Clicked")
 
-        const result = await onSubmit(formData);
+        const submissionData = {
+            ...formData,
+            price: Number(formData.price),
+            quantity: Number(formData.quantity),
+            stock: {
+                store1: Number(formData.stock.store1),
+                store2: Number(formData.stock.store2)
+            },
+            minStock: Number(formData.minStock)
+        };
+
+        const result = await onSubmit(submissionData);
 
         if (result.success) {
             // Reset form
@@ -45,9 +58,6 @@ export const AddProductForm: React.FC<AddProductFormProps> = ({ onSubmit, onCanc
         setSubmitting(false);
     };
 
-    const getFieldError = (fieldName: string) => {
-        return errors.find(error => error.field === fieldName)?.message;
-    };
 
     return (
         <form onSubmit={handleSubmit} className="add-product-form">
@@ -62,9 +72,7 @@ export const AddProductForm: React.FC<AddProductFormProps> = ({ onSubmit, onCanc
                         ...prev,
                         name: { ...prev.name, en: e.target.value }
                     }))}
-                    className={getFieldError('name.en') ? 'error' : ''}
                 />
-                {getFieldError('name.en') && <span className="error-text">{getFieldError('name.en')}</span>}
             </div>
 
             <div className="form-group">
@@ -76,9 +84,7 @@ export const AddProductForm: React.FC<AddProductFormProps> = ({ onSubmit, onCanc
                         ...prev,
                         name: { ...prev.name, si: e.target.value }
                     }))}
-                    className={getFieldError('name.si') ? 'error' : ''}
                 />
-                {getFieldError('name.si') && <span className="error-text">{getFieldError('name.si')}</span>}
             </div>
 
             <div className="form-group">
@@ -88,9 +94,7 @@ export const AddProductForm: React.FC<AddProductFormProps> = ({ onSubmit, onCanc
                     step="0.01"
                     value={formData.price}
                     onChange={(e) => setFormData(prev => ({ ...prev, price: parseFloat(e.target.value) || 0 }))}
-                    className={getFieldError('price') ? 'error' : ''}
                 />
-                {getFieldError('price') && <span className="error-text">{getFieldError('price')}</span>}
             </div>
 
             <div className="form-row">
