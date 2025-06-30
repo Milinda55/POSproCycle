@@ -4,12 +4,12 @@ import { validateProduct, type ValidationError } from '../utils/validation';
 import {getRxDB} from "../db/initDB.ts";
 
 export class InventoryService {
-    private productRepository: ProductRepository
+    productRepository: ProductRepository
     constructor(productRepository: ProductRepository) {
         this.productRepository = productRepository;
     }
 
-    static async addProduct(productData: Omit<ProductDocType, 'id'>): Promise<{ success: boolean; product?: any; errors?: ValidationError[] }> {
+    async addProduct(productData: Omit<ProductDocType, 'id'>): Promise<{ success: boolean; product?: any; errors?: ValidationError[] }> {
         const errors = validateProduct(productData);
         if (errors.length > 0) {
             return { success: false, errors };
