@@ -4,7 +4,8 @@ import { RxDBDevModePlugin } from 'rxdb/plugins/dev-mode';
 import { wrappedValidateAjvStorage } from 'rxdb/plugins/validate-ajv';
 import { productSchema, type ProductCollection } from './schemas/product.ts';
 import { RxDBMigrationSchemaPlugin } from 'rxdb/plugins/migration-schema';
-import { getRxStorageMemory } from 'rxdb/plugins/storage-memory';
+import { getRxStorageDexie } from 'rxdb/plugins/storage-dexie';
+import {SyncManager} from "./sync.ts";
 
 // Initialize plugins once
 addRxPlugin(RxDBDevModePlugin);
@@ -51,14 +52,14 @@ export async function initDB(): Promise<BikePoSDatabase> {
 
     _database = (async () => {
         const storage = wrappedValidateAjvStorage({
-            storage: getRxStorageMemory()
+            storage: getRxStorageDexie()
         });
 
         const db = await createRxDatabase<BikePoSDatabase>({
             name: 'bikeposdb',
             storage,
             multiInstance: false,
-            ignoreDuplicate: true // Allow during hot-reload
+            ignoreDuplicate: true
         });
 
         await db.addCollections({
@@ -66,7 +67,7 @@ export async function initDB(): Promise<BikePoSDatabase> {
                 schema: productSchema,
                 migrationStrategies: {
                     1: (oldDoc) => {
-                        return oldDoc; // Simple migration
+                        return oldDoc;
                     }
                 }
             }
@@ -79,6 +80,10 @@ export async function initDB(): Promise<BikePoSDatabase> {
                 await db.close();
             });
         }
+        const syncManager = new SyncManager('store1');
+        await syncManager.initializeSync(db.products);
+
+        console.log('Sync initialized for store1');
 
         return db;
     })();

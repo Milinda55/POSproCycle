@@ -53,6 +53,7 @@ export const AddProductForm: React.FC<AddProductFormProps> = ({ onSubmit, onCanc
             setErrors([]);
         } else {
             setErrors(result.errors || []);
+            console.log(errors)
         }
 
         setSubmitting(false);

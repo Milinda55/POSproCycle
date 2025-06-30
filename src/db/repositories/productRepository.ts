@@ -3,7 +3,7 @@ import type {ProductDocType} from '../schemas/product';
 import type {BikePoSDatabase} from "../initDB.ts";
 
 export class ProductRepository {
-    private dbPromise: () => Promise<BikePoSDatabase>
+    private readonly dbPromise: () => Promise<BikePoSDatabase>
 
     constructor(dbGetter: () => Promise<BikePoSDatabase>) {
         this.dbPromise = dbGetter;
@@ -47,19 +47,37 @@ export class ProductRepository {
         return true;
     }
 
-    async searchProducts(query: string): Promise<RxDocument<ProductDocType>[]> {
-        const regexString = query;
+    // In productRepository.ts, modify your debugDatabase method:
+    async debugDatabase(): Promise<void> {
         const db = await this.dbPromise();
 
-        return db.products.find({
+        const allProducts = await db.products.find().exec();
+        console.log('Total products in DB:', allProducts.length);
+
+        if (allProducts.length > 0) {
+            console.log('All products:', allProducts.map(doc => doc.toJSON()));
+            console.log('First product barcode:', allProducts[0].get('barcode'));
+            console.log('Available barcodes:', allProducts.map(doc => doc.get('barcode')));
+        } else {
+            console.log('No products found in database!');
+        }
+    }
+
+    async searchProducts(query: string): Promise<RxDocument<ProductDocType>[]> {
+        const db = await this.dbPromise();
+
+        // Debug: log what we're searching for
+        console.log('Searching for:', query);
+
+        // Try simple barcode match
+        const result = await db.products.find({
             selector: {
-                $or: [
-                    { 'name.en': { $regex: regexString } },
-                    { 'name.si': { $regex: regexString } },
-                    { 'barcode': { $regex: regexString } }
-                ]
+                barcode: query
             }
         }).exec();
+
+        console.log('Found documents:', result.map(doc => doc.toJSON()));
+        return result;
     }
 
 
