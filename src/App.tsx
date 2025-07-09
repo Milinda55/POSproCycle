@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ProductSearch } from './components/inventory/SearchFilter/ProductSearch.tsx';
 import { InventoryService } from './services/inventoryService.ts';
 import { ProductRepository } from './db/repositories/productRepository.ts';
-import { getRxDB } from './db/initDB.ts';
+import { initDB} from './db/initDB.ts';
 import { AddProductForm } from './components/inventory/AddProductForm';
 import type {ProductDocType} from './db/schemas/product.ts';
 import {EditProductForm} from "./pages/Inventory/EditProduct.tsx";
@@ -12,6 +12,15 @@ interface Product extends ProductDocType {
     _rev: string;
 }
 
+interface WebRTCStatus {
+    isConnected: boolean;
+    peerId: string;
+    connectionStatus: 'disconnected' | 'connecting' | 'connected' | 'error';
+    connectedPeers: string[];
+    lastSync: Date | null;
+    error: string | null;
+}
+
 const App: React.FC = () => {
     const [products, setProducts] = useState<Product[]>([]);
     const [loading, setLoading] = useState(false);
@@ -19,10 +28,85 @@ const App: React.FC = () => {
     const [showForm, setShowForm] = useState(false);
     const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
-    const [inventoryService] = useState(() => {
-        const productRepository = new ProductRepository(getRxDB);
-        return new InventoryService(productRepository);
+    // WebRTC Status
+    const [webrtcStatus, setWebrtcStatus] = useState<WebRTCStatus>({
+        isConnected: false,
+        peerId: '',
+        connectionStatus: 'disconnected',
+        connectedPeers: [],
+        lastSync: null,
+        error: null
     });
+
+    // Database selection
+    const [selectedDatabase, setSelectedDatabase] = useState<'store1' | 'store2'>('store1');
+    const [availableDatabases] = useState<Array<{id: 'store1' | 'store2', name: string}>>([
+        { id: 'store1', name: 'Store 1 Database' },
+        { id: 'store2', name: 'Store 2 Database' }
+    ]);
+
+    const [inventoryService, setInventoryService] = useState<InventoryService | null>(null);
+
+    useEffect(() => {
+        const initializeDatabase = async () => {
+            try {
+                setLoading(true);
+                const { localDb } = await initDB(selectedDatabase);
+                const productRepository = new ProductRepository(() => Promise.resolve(localDb));
+                setInventoryService(new InventoryService(productRepository));
+            } catch (err) {
+                console.error('Failed to initialize database:', err);
+                setError('Failed to initialize database');
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        initializeDatabase();
+    }, [selectedDatabase]);
+
+    // Initialize WebRTC connection
+    useEffect(() => {
+        initializeWebRTC();
+    }, [selectedDatabase]);
+
+    const initializeWebRTC = async () => {
+        try {
+            setWebrtcStatus(prev => ({ ...prev, connectionStatus: 'connecting', error: null }));
+
+            // Meka poddak balala hadahan
+
+            // Initialize WebRTC sync here
+            // This would call your WebRTC service
+            // const webrtcService = new WebRTCService();
+            // await webrtcService.initialize(selectedDatabase);
+
+            // Mock WebRTC initialization for now
+            setTimeout(() => {
+                setWebrtcStatus(prev => ({
+                    ...prev,
+                    connectionStatus: 'connected',
+                    isConnected: true,
+                    peerId: `peer-${selectedDatabase}-${Date.now().toString().slice(-6)}`,
+                    connectedPeers: ['peer-example-123'],
+                    lastSync: new Date()
+                }));
+            }, 2000);
+
+        } catch (err: any) {
+            setWebrtcStatus(prev => ({
+                ...prev,
+                connectionStatus: 'error',
+                error: err.message
+            }));
+        }
+    };
+
+    const handleDatabaseSwitch = (dbId: 'store1' | 'store2') => {
+        setSelectedDatabase(dbId);
+        setProducts([]); // Clear products when switching
+        loadAllProducts(); // Reload products for new database
+    };
 
     const handleEdit = (product: Product) => {
         setEditingProduct(product);
@@ -32,7 +116,7 @@ const App: React.FC = () => {
         if (!editingProduct) return { success: false, errors: ['No product selected'] };
 
         try {
-            const result = await inventoryService.updateProduct(
+            const result = await inventoryService?.updateProduct(
                 editingProduct.id,
                 updatedProduct
             );
@@ -40,6 +124,8 @@ const App: React.FC = () => {
             if (result.success) {
                 await loadAllProducts();
                 setEditingProduct(null);
+                // Trigger sync after update
+                await triggerSync();
             }
 
             return result;
@@ -47,6 +133,113 @@ const App: React.FC = () => {
             return { success: false, errors: [err.message] };
         }
     };
+
+    const triggerSync = async () => {
+        try {
+            setWebrtcStatus(prev => ({ ...prev, lastSync: new Date() }));
+            // Call your WebRTC sync method here
+            // await webrtcService.sync();
+        } catch (err: any) {
+            setWebrtcStatus(prev => ({ ...prev, error: err.message }));
+        }
+    };
+
+    const renderWebRTCStatus = () => (
+        <div style={{
+            border: '1px solid #ddd',
+            borderRadius: '8px',
+            padding: '1rem',
+            marginBottom: '1rem',
+            backgroundColor: webrtcStatus.connectionStatus === 'connected' ? '#e8f5e8' : '#f8f8f8'
+        }}>
+            <h3>WebRTC Connection Status</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
+                <div>
+                    <strong>Status:</strong>
+                    <span style={{
+                        color: webrtcStatus.connectionStatus === 'connected' ? 'green' :
+                            webrtcStatus.connectionStatus === 'error' ? 'red' : 'orange',
+                        marginLeft: '0.5rem'
+                    }}>
+                        {webrtcStatus.connectionStatus.toUpperCase()}
+                    </span>
+                </div>
+                <div><strong>Peer ID:</strong> {webrtcStatus.peerId || 'Not assigned'}</div>
+                <div><strong>Connected Peers:</strong> {webrtcStatus.connectedPeers.length}</div>
+                <div><strong>Last Sync:</strong> {webrtcStatus.lastSync ? webrtcStatus.lastSync.toLocaleTimeString() : 'Never'}</div>
+            </div>
+
+            {webrtcStatus.error && (
+                <div style={{ color: 'red', marginTop: '0.5rem' }}>
+                    <strong>Error:</strong> {webrtcStatus.error}
+                </div>
+            )}
+
+            <div style={{ marginTop: '1rem' }}>
+                <button
+                    onClick={initializeWebRTC}
+                    style={{
+                        padding: '0.5rem 1rem',
+                        backgroundColor: '#2196F3',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer',
+                        marginRight: '0.5rem'
+                    }}
+                >
+                    Reconnect
+                </button>
+                <button
+                    onClick={triggerSync}
+                    disabled={webrtcStatus.connectionStatus !== 'connected'}
+                    style={{
+                        padding: '0.5rem 1rem',
+                        backgroundColor: webrtcStatus.connectionStatus === 'connected' ? '#4CAF50' : '#ccc',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: webrtcStatus.connectionStatus === 'connected' ? 'pointer' : 'not-allowed'
+                    }}
+                >
+                    Manual Sync
+                </button>
+            </div>
+        </div>
+    );
+
+    const renderDatabaseSelector = () => (
+        <div style={{
+            border: '1px solid #ddd',
+            borderRadius: '8px',
+            padding: '1rem',
+            marginBottom: '1rem'
+        }}>
+            <h3>Database Selection</h3>
+            <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                <span><strong>Active Database:</strong></span>
+                {availableDatabases.map(db => (
+                    <button
+                        key={db.id}
+                        onClick={() => handleDatabaseSwitch(db.id)}
+                        style={{
+                            padding: '0.5rem 1rem',
+                            backgroundColor: selectedDatabase === db.id ? '#4CAF50' : '#f1f1f1',
+                            color: selectedDatabase === db.id ? 'white' : 'black',
+                            border: '1px solid #ddd',
+                            borderRadius: '4px',
+                            cursor: 'pointer'
+                        }}
+                    >
+                        {db.name}
+                    </button>
+                ))}
+            </div>
+            <div style={{ marginTop: '0.5rem', fontSize: '0.9rem', color: '#666' }}>
+                Current: {availableDatabases.find(db => db.id === selectedDatabase)?.name}
+            </div>
+        </div>
+    );
 
     const renderProductCard = (product: Product) => (
         <div
@@ -67,6 +260,20 @@ const App: React.FC = () => {
             <p><strong>Price:</strong> Rs.{product.price}</p>
             <p><strong>Quantity:</strong> {product.quantity}</p>
             <p><strong>Stock:</strong> Store1: {product.stock.store1}, Store2: {product.stock.store2}</p>
+
+            {/* Show database indicator */}
+            <div style={{
+                position: 'absolute',
+                top: '0.5rem',
+                left: '0.5rem',
+                padding: '0.25rem 0.5rem',
+                backgroundColor: selectedDatabase === 'store1' ? '#4CAF50' : '#FF9800',
+                color: 'white',
+                fontSize: '0.8rem',
+                borderRadius: '4px'
+            }}>
+                {selectedDatabase.toUpperCase()}
+            </div>
 
             <button
                 onClick={() => handleEdit(product)}
@@ -89,9 +296,11 @@ const App: React.FC = () => {
 
     useEffect(() => {
         loadAllProducts();
-    }, []);
+    }, [selectedDatabase]);
 
     const loadAllProducts = async () => {
+        if (!inventoryService) return;
+
         try {
             setLoading(true);
             setError(null);
@@ -138,6 +347,8 @@ const App: React.FC = () => {
             const result = await inventoryService.addProduct(product);
             await loadAllProducts();
             setShowForm(false);
+            // Trigger sync after adding
+            await triggerSync();
             return result;
         } catch (err: any) {
             return { success: false, errors: [err.message] };
@@ -159,7 +370,13 @@ const App: React.FC = () => {
                 }} />
             )}
 
-            <h1>Product Inventory</h1>
+            <h1>Product Inventory - WebRTC Sync Test</h1>
+
+            {/* Database Selection */}
+            {renderDatabaseSelector()}
+
+            {/* WebRTC Status */}
+            {renderWebRTCStatus()}
 
             <ProductSearch onSearch={handleSearch} />
 
@@ -176,6 +393,20 @@ const App: React.FC = () => {
                     }}
                 >
                     {showForm ? 'Cancel Add Product' : 'Add New Product'}
+                </button>
+
+                <button
+                    onClick={loadAllProducts}
+                    style={{
+                        padding: '0.5rem 1rem',
+                        backgroundColor: '#FF9800',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer'
+                    }}
+                >
+                    Refresh Products
                 </button>
             </div>
 
@@ -211,10 +442,13 @@ const App: React.FC = () => {
             )}
 
             <div className="products-list" style={{ marginTop: '2rem' }}>
-                <h2>Products ({products.length})</h2>
+                <h2>Products ({products.length}) - {availableDatabases.find(db => db.id === selectedDatabase)?.name}</h2>
 
                 {products.length === 0 && !loading ? (
-                    <p style={{ fontStyle: 'italic', color: '#666' }}>No products found. Add a product to get started.</p>
+                    <p style={{ fontStyle: 'italic', color: '#666' }}>
+                        No products found in {availableDatabases.find(db => db.id === selectedDatabase)?.name}.
+                        Add a product to get started.
+                    </p>
                 ) : (
                     <div className="products-grid" style={{
                         display: 'grid',
