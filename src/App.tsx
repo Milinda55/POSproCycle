@@ -5,6 +5,7 @@ import { ProductRepository } from './db/repositories/productRepository.ts';
 import { getRxDB } from './db/initDB.ts';
 import { AddProductForm } from './components/inventory/AddProductForm';
 import type {ProductDocType} from './db/schemas/product.ts';
+import {EditProductForm} from "./pages/Inventory/EditProduct.tsx";
 
 interface Product extends ProductDocType {
     _id: string;
@@ -16,11 +17,75 @@ const App: React.FC = () => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [showForm, setShowForm] = useState(false);
+    const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
     const [inventoryService] = useState(() => {
         const productRepository = new ProductRepository(getRxDB);
         return new InventoryService(productRepository);
     });
+
+    const handleEdit = (product: Product) => {
+        setEditingProduct(product);
+    };
+
+    const handleUpdateProduct = async (updatedProduct: ProductDocType) => {
+        if (!editingProduct) return { success: false, errors: ['No product selected'] };
+
+        try {
+            const result = await inventoryService.updateProduct(
+                editingProduct.id,
+                updatedProduct
+            );
+
+            if (result.success) {
+                await loadAllProducts();
+                setEditingProduct(null);
+            }
+
+            return result;
+        } catch (err: any) {
+            return { success: false, errors: [err.message] };
+        }
+    };
+
+    const renderProductCard = (product: Product) => (
+        <div
+            key={product._id}
+            className="product-card"
+            style={{
+                border: '1px solid #ccc',
+                borderRadius: '8px',
+                padding: '1rem',
+                margin: '1rem',
+                minWidth: '250px',
+                position: 'relative'
+            }}
+        >
+            <h3>{product.name.en}</h3>
+            <p><strong>Barcode:</strong> {product.barcode}</p>
+            <p><strong>Category:</strong> {product.category}</p>
+            <p><strong>Price:</strong> Rs.{product.price}</p>
+            <p><strong>Quantity:</strong> {product.quantity}</p>
+            <p><strong>Stock:</strong> Store1: {product.stock.store1}, Store2: {product.stock.store2}</p>
+
+            <button
+                onClick={() => handleEdit(product)}
+                style={{
+                    position: 'absolute',
+                    top: '0.5rem',
+                    right: '0.5rem',
+                    padding: '0.25rem 0.5rem',
+                    backgroundColor: '#2196F3',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: 'pointer'
+                }}
+            >
+                Edit
+            </button>
+        </div>
+    );
 
     useEffect(() => {
         loadAllProducts();
@@ -80,52 +145,94 @@ const App: React.FC = () => {
     };
 
     return (
-        <div className="app" style={{ padding: '2rem', fontFamily: 'Arial, sans-serif' }}>
+        <div className="app" style={{ padding: '2rem', fontFamily: 'Arial, sans-serif', position: 'relative' }}>
+            {/* Overlay for when edit form is open */}
+            {editingProduct && (
+                <div style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    backgroundColor: 'rgba(0,0,0,0.5)',
+                    zIndex: 999
+                }} />
+            )}
+
             <h1>Product Inventory</h1>
 
             <ProductSearch onSearch={handleSearch} />
 
-            <button onClick={() => setShowForm(!showForm)} style={{ margin: '1rem 0' }}>
-                {showForm ? 'Hide Form' : 'Add New Product'}
-            </button>
+            <div style={{ display: 'flex', gap: '1rem', margin: '1rem 0' }}>
+                <button
+                    onClick={() => setShowForm(!showForm)}
+                    style={{
+                        padding: '0.5rem 1rem',
+                        backgroundColor: showForm ? '#f44336' : '#4CAF50',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: '4px',
+                        cursor: 'pointer'
+                    }}
+                >
+                    {showForm ? 'Cancel Add Product' : 'Add New Product'}
+                </button>
+            </div>
 
             {showForm && (
-                <AddProductForm onSubmit={handleAddProduct} onCancel={() => setShowForm(false)} />
+                <AddProductForm
+                    onSubmit={handleAddProduct}
+                    onCancel={() => setShowForm(false)}
+                />
             )}
 
-            {error && <div style={{ color: 'red', margin: '1rem 0' }}>{error}</div>}
+            {error && (
+                <div style={{
+                    color: 'white',
+                    backgroundColor: '#f44336',
+                    padding: '0.5rem 1rem',
+                    borderRadius: '4px',
+                    margin: '1rem 0'
+                }}>
+                    {error}
+                </div>
+            )}
 
-            {loading && <div style={{ margin: '1rem 0' }}>Loading...</div>}
+            {loading && (
+                <div style={{
+                    padding: '0.5rem 1rem',
+                    backgroundColor: '#2196F3',
+                    color: 'white',
+                    borderRadius: '4px',
+                    margin: '1rem 0'
+                }}>
+                    Loading...
+                </div>
+            )}
 
             <div className="products-list" style={{ marginTop: '2rem' }}>
                 <h2>Products ({products.length})</h2>
+
                 {products.length === 0 && !loading ? (
-                    <p>No products found.</p>
+                    <p style={{ fontStyle: 'italic', color: '#666' }}>No products found. Add a product to get started.</p>
                 ) : (
-                    <div className="products-grid" style={{ display: 'flex', flexWrap: 'wrap' }}>
-                        {products.map(product => (
-                            <div
-                                key={product._id}
-                                className="product-card"
-                                style={{
-                                    border: '1px solid #ccc',
-                                    borderRadius: '8px',
-                                    padding: '1rem',
-                                    margin: '1rem',
-                                    minWidth: '250px'
-                                }}
-                            >
-                                <h3>{product.name.en}</h3>
-                                <p><strong>Barcode:</strong> {product.barcode}</p>
-                                <p><strong>Category:</strong> {product.category}</p>
-                                <p><strong>Price:</strong> Rs.{product.price}</p>
-                                <p><strong>Quantity:</strong> {product.quantity}</p>
-                                <p><strong>Stock:</strong> Store1: {product.stock.store1}, Store2: {product.stock.store2}</p>
-                            </div>
-                        ))}
+                    <div className="products-grid" style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+                        gap: '1rem'
+                    }}>
+                        {products.map(renderProductCard)}
                     </div>
                 )}
             </div>
+
+            {editingProduct && (
+                <EditProductForm
+                    product={editingProduct}
+                    onSubmit={handleUpdateProduct}
+                    onCancel={() => setEditingProduct(null)}
+                />
+            )}
         </div>
     );
 };

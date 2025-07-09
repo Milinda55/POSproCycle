@@ -1,11 +1,11 @@
-import { replicateRxCollection, RxReplicationState } from 'rxdb/plugins/replication';
-import type { ProductDocType } from './schemas/product.ts';
-import type { ProductCollection } from './schemas/product.ts';
+import { replicateRxCollection } from 'rxdb/plugins/replication';
+// import type { ProductDocType } from './schemas/product.ts';
+import type { ProductCollection } from './schemas/product';
 
 export type StoreId = 'store1' | 'store2';
 
 export class SyncManager {
-    private replicationState: RxReplicationState<ProductDocType, any> | null = null;
+    private replicationState: any;
     private storeId: StoreId;
 
     constructor(storeId: StoreId) {
@@ -14,7 +14,7 @@ export class SyncManager {
 
     private getCouchDBUrl(): string {
         const baseUrl = import.meta.env.VITE_COUCHDB_URL;
-        return `${baseUrl}/bikepos_${this.storeId}/`; // Ensure trailing slash
+        return `${baseUrl}/bikepos_${this.storeId}`;
     }
 
     private getAuthHeader(): string {
@@ -37,10 +37,12 @@ export class SyncManager {
             live: true,
             retryTime: 5000,
             pull: {
-                async handler(lastCheckpoint: any) {
-                    const url = new URL(`${couchUrl}_changes`);
+                handler: async (lastCheckpoint) => {
+                    const url = new URL(`${couchUrl}/_changes`);
                     url.searchParams.set('include_docs', 'true');
                     if (lastCheckpoint) {
+                        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+                        // @ts-expect-error
                         url.searchParams.set('since', lastCheckpoint.sequence);
                     }
 
@@ -49,13 +51,11 @@ export class SyncManager {
                     });
 
                     if (!response.ok) {
-                        const errorText = await response.text();
-                        // console.error('CouchDB Pull Failed:', response.status, errorText);
-                        throw new Error('Pull replication failed');
+                        throw new Error(`Pull failed: ${response.status}`);
                     }
 
                     const data = await response.json();
-                    const documents = (data.results || [])
+                    const documents = data.results
                         .filter((r: any) => r.doc)
                         .map((r: any) => ({
                             ...r.doc,
@@ -67,17 +67,17 @@ export class SyncManager {
                         documents,
                         checkpoint: { sequence: data.last_seq }
                     };
-                }
+                },
+                batchSize: 50,
+                modifier: (doc: any) => ({
+                    ...doc,
+                    id: doc._id,
+                    _rev: doc._rev
+                })
             },
             push: {
-                async handler(rows: any) {
-                    const docs = rows.map((row: any) => ({
-                        _id: row.newDocumentState.id,
-                        ...row.newDocumentState,
-                        _rev: row.assumedMasterState?._rev
-                    }));
-
-                    const response = await fetch(`${couchUrl}_bulk_docs`, {
+                handler: async (docs) => {
+                    const response = await fetch(`${couchUrl}/_bulk_docs`, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
@@ -87,13 +87,17 @@ export class SyncManager {
                     });
 
                     if (!response.ok) {
-                        const errorText = await response.text();
-                        // console.error('CouchDB Push Failed:', response.status, errorText);
-                        throw new Error('Push replication failed');
+                        throw new Error(`Push failed: ${response.status}`);
                     }
 
                     return await response.json();
-                }
+                },
+                batchSize: 50,
+                modifier: (doc: any) => ({
+                    _id: doc.id,
+                    ...doc,
+                    _rev: doc._rev
+                })
             }
         });
 

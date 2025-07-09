@@ -34,23 +34,49 @@ export class InventoryService {
         }
     }
 
-    async updateProduct(productId: string, store: 'store1' | 'store2', quantity: number): Promise<boolean> {
+    async updateProduct(
+        productId: string,
+        updateData: Partial<ProductDocType>
+    ): Promise<{ success: boolean; errors?: string[] }> {
         try {
             const db = await getRxDB();
             const product = await db.products.findOne(productId).exec();
 
-            if (product) {
-                await product.update({
-                    $set: {
-                        [`stock.${store}`]: Number(quantity)
-                    }
-                });
-                return true;
+            if (!product) {
+                return { success: false, errors: ['Product not found'] };
             }
-            return false;
+
+            // Create the update object
+            const updateObj: any = {};
+
+            // Handle nested fields
+            if (updateData.name) {
+                updateObj['name'] = updateData.name;
+            }
+            if (updateData.stock) {
+                updateObj['stock'] = updateData.stock;
+            }
+
+            // Handle simple fields
+            const simpleFields = ['price', 'quantity', 'category', 'barcode', 'minStock'];
+            simpleFields.forEach(field => {
+                if (field in updateData) {
+                    updateObj[field] = (updateData as any)[field];
+                }
+            });
+
+            // Perform the update
+            await product.update({
+                $set: updateObj
+            });
+
+            return { success: true };
         } catch (error) {
-            console.error('Error updating stock:', error);
-            return false;
+            console.error('Update error:', error);
+            return {
+                success: false,
+                errors: ['Failed to update product']
+            };
         }
     }
 
