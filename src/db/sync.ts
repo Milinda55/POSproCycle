@@ -7,19 +7,21 @@ export type StoreId = 'store1' | 'store2';
 export class SyncManager {
     private replicationState: RxReplicationState<ProductDocType, any> | null = null;
     private storeId: StoreId;
+    private isReadOnly: boolean;
 
-    constructor(storeId: StoreId) {
+    constructor(storeId: StoreId, isReadOnly: boolean = false) {
         this.storeId = storeId;
+        this.isReadOnly = isReadOnly;
     }
 
     private getCouchDBUrl(): string {
-        const baseUrl = import.meta.env.VITE_COUCHDB_URL;
-        return `${baseUrl}/bikepos_${this.storeId}/`; // Ensure trailing slash
+        const baseUrl = import.meta.env.VITE_COUCHDB_URL || 'http://localhost:5984';
+        return `${baseUrl}/bikepos_${this.storeId}/`;
     }
 
     private getAuthHeader(): string {
-        const user = import.meta.env.VITE_COUCHDB_USERNAME;
-        const pass = import.meta.env.VITE_COUCHDB_PASSWORD;
+        const user = import.meta.env.VITE_COUCHDB_USERNAME || 'admin';
+        const pass = import.meta.env.VITE_COUCHDB_PASSWORD || 'password';
         return 'Basic ' + btoa(`${user}:${pass}`);
     }
 
@@ -31,79 +33,97 @@ export class SyncManager {
         const couchUrl = this.getCouchDBUrl();
         const authHeader = this.getAuthHeader();
 
-        this.replicationState = replicateRxCollection({
-            collection,
-            replicationIdentifier: `${this.storeId}-sync`,
-            live: true,
-            retryTime: 5000,
-            pull: {
-                async handler(lastCheckpoint: any) {
-                    const url = new URL(`${couchUrl}_changes`);
-                    url.searchParams.set('include_docs', 'true');
-                    if (lastCheckpoint) {
-                        url.searchParams.set('since', lastCheckpoint.sequence);
+        try {
+            const replicationConfig: any = {
+                collection,
+                replicationIdentifier: `${this.storeId}-sync${this.isReadOnly ? '-readonly' : ''}`,
+                live: true,
+                retryTime: 5000,
+                pull: {
+                    async handler(lastCheckpoint: any) {
+                        try {
+                            const url = new URL(`${couchUrl}_changes`);
+                            url.searchParams.set('include_docs', 'true');
+                            if (lastCheckpoint) {
+                                url.searchParams.set('since', lastCheckpoint.sequence);
+                            }
+
+                            const response = await fetch(url.toString(), {
+                                headers: { 'Authorization': authHeader }
+                            });
+
+                            if (!response.ok) {
+                                console.warn(`CouchDB Pull Failed for ${this.storeId}:`, response.status);
+                                return { documents: [], checkpoint: lastCheckpoint };
+                            }
+
+                            const data = await response.json();
+                            const documents = (data.results || [])
+                                .filter((r: any) => r.doc && !r.doc._deleted)
+                                .map((r: any) => ({
+                                    ...r.doc,
+                                    id: r.doc._id,
+                                    _rev: r.doc._rev
+                                }));
+
+                            return {
+                                documents,
+                                checkpoint: { sequence: data.last_seq }
+                            };
+                        } catch (error) {
+                            console.warn(`Pull error for ${this.storeId}:`, error);
+                            return { documents: [], checkpoint: lastCheckpoint };
+                        }
                     }
-
-                    const response = await fetch(url.toString(), {
-                        headers: { 'Authorization': authHeader }
-                    });
-
-                    if (!response.ok) {
-                        const errorText = await response.text();
-                        // console.error('CouchDB Pull Failed:', response.status, errorText);
-                        throw new Error('Pull replication failed');
-                    }
-
-                    const data = await response.json();
-                    const documents = (data.results || [])
-                        .filter((r: any) => r.doc)
-                        .map((r: any) => ({
-                            ...r.doc,
-                            id: r.doc._id,
-                            _rev: r.doc._rev
-                        }));
-
-                    return {
-                        documents,
-                        checkpoint: { sequence: data.last_seq }
-                    };
                 }
-            },
-            push: {
-                async handler(rows: any) {
-                    const docs = rows.map((row: any) => ({
-                        _id: row.newDocumentState.id,
-                        ...row.newDocumentState,
-                        _rev: row.assumedMasterState?._rev
-                    }));
+            };
 
-                    const response = await fetch(`${couchUrl}_bulk_docs`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': authHeader
-                        },
-                        body: JSON.stringify({ docs })
-                    });
+            // Only add push handler if not read-only
+            if (!this.isReadOnly) {
+                replicationConfig.push = {
+                    async handler(rows: any) {
+                        try {
+                            const docs = rows.map((row: any) => ({
+                                ...row.newDocumentState
+                            }));
 
-                    if (!response.ok) {
-                        const errorText = await response.text();
-                        // console.error('CouchDB Push Failed:', response.status, errorText);
-                        throw new Error('Push replication failed');
+                            const response = await fetch(`${couchUrl}_bulk_docs`, {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json',
+                                    'Authorization': authHeader
+                                },
+                                body: JSON.stringify({ docs })
+                            });
+
+                            if (!response.ok) {
+                                console.warn(`CouchDB Push Failed for ${this.storeId}:`, response.status);
+                                return [];
+                            }
+
+                            return await response.json();
+                        } catch (error) {
+                            console.warn(`Push error for ${this.storeId}:`, error);
+                            return [];
+                        }
                     }
-
-                    return await response.json();
-                }
+                };
             }
-        });
 
-        this.replicationState.error$.subscribe((err: any) => {
-            console.error('Sync error:', err);
-        });
+            this.replicationState = replicateRxCollection(replicationConfig);
 
-        this.replicationState.active$.subscribe((active: boolean) => {
-            console.log(`Replication ${active ? 'active' : 'idle'}`);
-        });
+            this.replicationState.error$.subscribe((err: any) => {
+                console.warn(`Sync error (${this.storeId}${this.isReadOnly ? ' readonly' : ''}):`, err);
+            });
+
+            this.replicationState.active$.subscribe((active: boolean) => {
+                console.log(`Replication ${this.storeId}${this.isReadOnly ? ' (readonly)' : ''} ${active ? 'active' : 'idle'}`);
+            });
+
+        } catch (error) {
+            console.error(`Failed to initialize sync for ${this.storeId}:`, error);
+            throw error;
+        }
     }
 
     async cancel(): Promise<void> {
